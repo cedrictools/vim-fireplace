@@ -616,22 +616,28 @@ function! fireplace#platform(...) abort
   throw 'Fireplace: :Connect to a REPL or install classpath.vim'
 endfunction
 
+function! fireplace#cljclient(...) abort
+let buf = a:0 ? a:1 : s:buf()
+let client = fireplace#platform(buf)
+return client
+endfunction
+
 function! fireplace#client(...) abort
-  let buf = a:0 ? a:1 : s:buf()
-  let client = fireplace#platform(buf)
-  if fnamemodify(bufname(buf), ':e') ==# 'cljs'
-    if !has_key(client, 'connection')
-      throw 'Fireplace: no live REPL connection'
-    endif
-    if empty(client.piggiebacks)
-      let result = client.piggieback('')
-      if has_key(result, 'ex')
-        return result
-      endif
-    endif
-    return client.piggiebacks[0]
+let buf = a:0 ? a:1 : s:buf()
+let client = fireplace#platform(buf)
+if fnamemodify(bufname(buf), ':e') ==# 'cljs'
+  if !has_key(client, 'connection')
+    throw 'Fireplace: no live REPL connection'
   endif
-  return client
+  if empty(client.piggiebacks)
+    let result = client.piggieback('')
+    if has_key(result, 'ex')
+      return result
+    endif
+  endif
+  return client.piggiebacks[0]
+endif
+return client
 endfunction
 
 function! fireplace#message(payload, ...) abort
@@ -698,6 +704,15 @@ function! s:eval(expr, ...) abort
   return client.eval(a:expr, options)
 endfunction
 
+function! s:cljeval(expr, ...) abort
+  let options = a:0 ? copy(a:1) : {}
+  let client = fireplace#cljclient()
+  if !has_key(options, 'ns')
+    let options.ns = fireplace#ns()
+  endif
+  return client.eval(a:expr, options)
+endfunction
+
 function! s:temp_response(response) abort
   let output = []
   if get(a:response, 'err', '') !=# ''
@@ -739,6 +754,38 @@ function! s:qfhistory() abort
     call extend(list, [s:qfentry(entry)])
   endfor
   return list
+endfunction
+
+function! fireplace#cljsession_eval(expr, ...) abort
+  let response = s:cljeval(a:expr, a:0 ? a:1 : {})
+
+  if !empty(get(response, 'value', '')) || !empty(get(response, 'err', ''))
+    call insert(s:history, {'buffer': bufnr(''), 'code': a:expr, 'ns': fireplace#ns(), 'response': response})
+  endif
+  if len(s:history) > &history
+    call remove(s:history, &history, -1)
+  endif
+
+  if !empty(get(response, 'stacktrace', []))
+    let nr = 0
+    if has_key(s:qffiles, expand('%:p'))
+      let nr = winbufnr(s:qffiles[expand('%:p')].buffer)
+    endif
+    if nr != -1
+      call setloclist(nr, fireplace#quickfix_for(response.stacktrace))
+    endif
+  endif
+
+  call s:output_response(response)
+
+  if get(response, 'ex', '') !=# ''
+    let err = 'Clojure: '.response.ex
+  elseif has_key(response, 'value')
+    return response.value
+  else
+    let err = 'fireplace.vim: Something went wrong: '.string(response)
+  endif
+  throw err
 endfunction
 
 function! fireplace#session_eval(expr, ...) abort
