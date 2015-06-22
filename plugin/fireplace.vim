@@ -297,9 +297,9 @@ function! s:repl.piggieback(arg, ...) abort
   else
     let arg = ' ' . a:arg
   endif
-  let response = connection.eval('(cemerick.piggieback/cljs-repl'.arg.')')
+  "let response = connection.eval('(cemerick.piggieback/cljs-repl'.arg.')')
   call connection.eval("(use 'figwheel-sidecar.repl-api)")
-  let response = connection.eval('(cljs-repl)')
+  let response = connection.eval('(cljs-repl app)')
   if empty(get(response, 'ex'))
     call insert(self.piggiebacks, extend({'connection': connection}, deepcopy(s:piggieback)))
     return {}
@@ -709,7 +709,7 @@ function! s:cljeval(expr, ...) abort
   let options = a:0 ? copy(a:1) : {}
   let client = fireplace#cljclient()
   if !has_key(options, 'ns')
-    let options.ns = fireplace#ns()
+    let options.ns = 'cljfmt.core'
   endif
   return client.eval(a:expr, options)
 endfunction
